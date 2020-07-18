@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="description" content="HW3">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>JS Bin</title>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src='https://api.mapbox.com/mapbox-gl-js/v1.11.0/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v1.11.0/mapbox-gl.css' rel='stylesheet' />
+ 
+  
+<style id="jsbin-css">
+#canvas {
+  width: 1000px;
+  height: 1000px;
+ 
+}
+
+#map {
+  width: 1000px;
+  height: 600px;
+  float:none;
+  display:inline-block;
+}
+
+#chart {
+  width: 1000px;
+  height: 50px;
+  float:none;
+  display:inline-block;
+}
+</style>
+</head>
+<body>
+<div id='canvas'>
+  <div id ='map'></div>
+  <div id="chart"></div>
+</div>
+<script id="jsbin-javascript">
+mapboxgl.accessToken = 
+  'pk.eyJ1Ijoic2g1Njg4IiwiYSI6ImNrYmxhaGs5dTBjZjYzNHRtYmt1YWRncTEifQ.etbz2k6bLxcK8tu6LC7RHA';
+
+var map = new mapboxgl.Map({
+  container: 'map', // container id
+  style: 'mapbox://styles/mapbox/light-v10', // use a base map without any data
+  zoom: 3,
+  center:[-98.5,39.8]
+});
+
+
+
+
+map.on('load', function() {
+  
+map.addSource('statedata', {
+  type: 'geojson',
+  data:  'https://gist.githubusercontent.com/SiqiHuang18/bceb03036e083bb6df46170985a647c7/raw/5c99d137aa859717517fbf26f38cb87066d9a671/stateData.geojson',
+  promoteId: 'name',
+});
+  
+map.addLayer({
+    id: 'statedata',
+    source: 'statedata',
+    type: 'fill',
+    paint: {
+      'fill-opacity': 0.8,
+      'fill-outline-color': '#444',
+      'fill-color':'rgba(0,0,0,0)',
+     },
+
+  });
+  
+Promise.all([
+  d3.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us.csv"),
+  d3.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-states.csv"),
+  d3.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
+]).then(function(data) {
+  
+  var us = data[0];
+  var us_states = data[1];
+
+  var nys = data[1]
+        .filter(row => row.state=='New York');
+  
+  var nyc = data[2]
+        .filter(row => row.county=='New York City');
+
+  
+  createPlot(us,us_states,nys,nyc);
+});
+
+})
+  
+  
+  
+function createPlot(us,us_states,nys,nyc){
+  
+  function unpack(rows, key) {
+    return rows.map(function(row) { return row[key]; });
+  }
+  
+  let colors = ['#1f77b4', '#ff7f0e', '#2ca02c'];
+  
+  var trace1 = {
+    type: "scatter",
+    mode: "lines",
+    name: 'US Cases',
+    line: {color: colors[0]},
+    x: unpack(us, 'date'),
+    y: unpack(us, 'cases'),
+   
+  }
+  
+  
+  
+  var trace2 = {
+    type: "scatter",
+    mode: "lines",
+    name: 'NYS Cases',
+    line: {color: colors[1]},
+    x: unpack(nys, 'date'),
+    y: unpack(nys, 'cases'),
+
+  }
+  
+
+  
+  var trace3 = {
+    type: "scatter",
+    mode: "lines",
+    name: 'NYC Cases',
+    line: {color: colors[2]},
+    x: unpack(nyc, 'date'),
+    y: unpack(nyc, 'cases'),
+  }
+  
+
+  
+  let layout = {
+  title: "Covid-19 Casese in NYC vs. NYS and US",
+  width: 1000,
+  height: 350,
+
+  xaxis: {
+     title:'Date',
+     ticks: 'outside',
+     mirror: true,  // project the axis to the top
+     linewidth: 1,
+  },
+  yaxis: {
+    title:'Number of Cases',
+    ticks: 'outside',
+    mirror: true,  // project the axis to the right
+    linewidth: 1,
+  },
+  };
+  
+  var traces = [trace1,trace2,trace3];
+  
+  var chart = document.getElementById('chart');
+  
+  Plotly.newPlot(chart,traces,layout);
+  
+  function parsedate(date){
+    var dateParts = date.split("-");
+    return new Date(+dateParts[0], dateParts[1] - 1, +dateParts[2]);
+  }
+  
+    us_states.forEach(d => {
+    d['date'] = parsedate(d['date'])
+    
+    })
+
+ 
+  chart.on('plotly_hover', event => {
+      // In order to change color, we need to update all
+      // item colors, and give the specific one a different color
+      let today = parsedate(event.points[0].x); // index of the data element
+      
+      var prev = new Date(today)
+      prev.setDate(prev.getDate() - 1);
+    
+      console.log(today.toDateString())
+      console.log(prev.toDateString())
+
+      // state_yesterday = data
+      var state_today = us_states
+        .filter(row => row.date.toDateString() == today.toDateString());
+      
+      var state_prevday = us_states
+        .filter(row => row.date.toDateString() == prev.toDateString());
+      
+      
+      setStates(state_prevday, state_today);
+     
+    });
+  
+  //assign a state into a feature                      
+function setStates(state_prevday, state_today ) {
+ // thresholds for color mapping
+
+ 
+  function get_prevcount(state_prevday, statename){
+    
+    let prevcount = 0;
+    let state = state_prevday.filter(row => row.state == statename )
+   
+    console.log(state.length)
+    
+    if (state.length !== 0){
+      console.log(parseInt(state[0]['cases']))
+      prevcount = parseInt(state[0]['cases']);
+    }
+    
+    return prevcount
+    
+  }
+  
+  state_today.forEach(d => {
+    
+    var prevcount = get_prevcount(state_prevday,d['state'])
+    
+    
+   
+    
+    map.setFeatureState({
+      source: 'statedata',
+      id: d['state'],
+    },{
+      count:parseInt(d['cases']) - prevcount,
+    });
+    
+  });
+
+
+ //derive maxv from data
+  let steps = 7,
+  maxv = d3.max(state_today.map(d => parseInt(d['cases']) - get_prevcount(state_prevday,d['state']))),
+      
+  colors = d3.schemeBlues[steps],
+  domain = d3.range(0,maxv, maxv/steps),
+  filter = new Array();
+
+  // define color thresholds
+  domain.slice(1).forEach((v,k) =>{
+    filter.push(['<',['feature-state','count'],v]);
+    filter.push(colors[k]);
+  });
+  filter.push(colors[colors.length-1])
+
+
+  filter = [
+    'case',
+    // deal with missing value
+        ['==',['feature-state','count'],null],'rgba(0,0,0,0)',
+    // ... spread
+    ...filter,
+  ];
+
+  // add the fill color
+  map.setPaintProperty('statedata','fill-color',filter);
+
+
+}
+
+ }
+</script>
+
+
+</body>
+</html>
